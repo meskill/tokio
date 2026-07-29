@@ -39,13 +39,26 @@ pub(crate) struct Wheel {
     pending: LinkedList<TimerShared>,
 }
 
-/// Number of levels. Each level has 64 slots. By using 6 levels with 64 slots
-/// each, the timer is able to track time up to 2 years into the future with a
-/// precision of 1 millisecond.
-const NUM_LEVELS: usize = 6;
+/// Number of levels. Each level has 64 slots, i.e. covers `BITS_PER_LEVEL`
+/// more bits of the deadline than the level below it. With the stock 6 levels
+/// the timer tracks time up to 2 years into the future with a precision of 1
+/// millisecond.
+///
+/// Lowered to 3 to look for pgdog #1017 without waiting 12.4 days. The freeze
+/// needs the top level to hold both the slot `now` sits in - whose deadline
+/// `Level::next_expiration` pushes a full rotation out - and a later slot with
+/// a real timer, while every lower level is empty. A rotation is 2^36 ms at 6
+/// levels but only 262144 ms (~4.4 min) at 3, so the geometry recurs often.
+const NUM_LEVELS: usize = 3;
+
+/// Number of deadline bits covered by one level (64 slots).
+///
+/// `level_for` divided by `NUM_LEVELS`, which is only correct while that also
+/// happens to be 6. Split the two so the wheel can be resized.
+const BITS_PER_LEVEL: usize = 6;
 
 /// The maximum duration of a `Sleep`.
-pub(super) const MAX_DURATION: u64 = (1 << (6 * NUM_LEVELS)) - 1;
+pub(super) const MAX_DURATION: u64 = (1 << (BITS_PER_LEVEL * NUM_LEVELS)) - 1;
 
 impl Wheel {
     /// Creates a new timing wheel.
@@ -273,7 +286,7 @@ impl Wheel {
 }
 
 fn level_for(elapsed: u64, when: u64) -> usize {
-    const SLOT_MASK: u64 = (1 << 6) - 1;
+    const SLOT_MASK: u64 = (1 << BITS_PER_LEVEL) - 1;
 
     // Mask in the trailing bits ignored by the level calculation in order to cap
     // the possible leading zeros
@@ -287,7 +300,7 @@ fn level_for(elapsed: u64, when: u64) -> usize {
     let leading_zeros = masked.leading_zeros() as usize;
     let significant = 63 - leading_zeros;
 
-    significant / NUM_LEVELS
+    significant / BITS_PER_LEVEL
 }
 
 #[cfg(all(test, not(loom)))]
@@ -300,7 +313,7 @@ mod test {
             assert_eq!(0, level_for(0, pos), "level_for({pos}) -- binary = {pos:b}");
         }
 
-        for level in 1..5 {
+        for level in 1..NUM_LEVELS {
             for pos in level..64 {
                 let a = pos * 64_usize.pow(level as u32);
                 assert_eq!(
