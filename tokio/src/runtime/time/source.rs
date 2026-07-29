@@ -1,5 +1,27 @@
 use super::MAX_SAFE_MILLIS_DURATION;
 use crate::time::{Clock, Duration, Instant};
+use std::sync::LazyLock;
+
+/// Tick the wheel starts at, instead of 0.
+///
+/// EXPERIMENT (pgdog #1017): the runtime freeze correlates with 2^30 ms
+/// (~12.4 days) of uptime, which is where the wheel first cascades an entry
+/// from level 4 into level 5. Waiting 12.4 days per attempt is impractical, so
+/// `TOKIO_TIME_START_TICK` shifts the whole tick axis: process start maps to
+/// that tick rather than 0, and the crossing happens that much sooner.
+///
+///     TOKIO_TIME_START_TICK=1073731824   # 2^30 - 10_000, crosses after 10s
+///
+/// Every consumer of the tick axis works on differences (park durations,
+/// deadline deltas), so a uniform offset changes only which wheel slots and
+/// levels entries land in - exactly the variable under test.
+pub(crate) static START_TICK: LazyLock<u64> = LazyLock::new(|| {
+    std::env::var("TOKIO_TIME_START_TICK")
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u64>().ok())
+        .unwrap_or(0)
+        .min(MAX_SAFE_MILLIS_DURATION)
+});
 
 /// A structure which handles conversion from Instants to `u64` timestamps.
 #[derive(Debug)]
@@ -26,7 +48,7 @@ impl TimeSource {
             .as_millis()
             .try_into()
             .unwrap_or(MAX_SAFE_MILLIS_DURATION);
-        ms.min(MAX_SAFE_MILLIS_DURATION)
+        ms.saturating_add(*START_TICK).min(MAX_SAFE_MILLIS_DURATION)
     }
 
     pub(crate) fn tick_to_duration(&self, t: u64) -> Duration {

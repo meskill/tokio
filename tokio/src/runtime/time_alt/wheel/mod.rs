@@ -43,7 +43,7 @@ impl Wheel {
     pub(crate) fn new() -> Wheel {
         let levels = (0..NUM_LEVELS).map(Level::new).collect::<Box<_>>();
         Wheel {
-            elapsed: 0,
+            elapsed: *crate::runtime::time::source::START_TICK,
             levels: levels.try_into().unwrap(),
         }
     }
@@ -272,5 +272,11 @@ mod test {
                 }
             }
         }
+    }
+
+    #[test]
+    fn new_wheel_starts_at_start_tick() {
+        let start_tick = *crate::runtime::time::source::START_TICK;
+        assert_eq!(Wheel::new().elapsed(), start_tick);
     }
 }
