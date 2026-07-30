@@ -13,7 +13,7 @@ use entry::{TimerHandle, TimerShared, MAX_SAFE_MILLIS_DURATION};
 mod handle;
 pub(crate) use self::handle::Handle;
 
-mod source;
+pub(crate) mod source;
 pub(crate) use source::TimeSource;
 
 mod wheel;

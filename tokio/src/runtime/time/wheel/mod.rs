@@ -52,7 +52,7 @@ impl Wheel {
     pub(crate) fn new() -> Wheel {
         let levels = (0..NUM_LEVELS).map(Level::new).collect::<Box<_>>();
         Wheel {
-            elapsed: 0,
+            elapsed: *super::source::START_TICK,
             levels: levels.try_into().unwrap(),
             pending: LinkedList::new(),
         }

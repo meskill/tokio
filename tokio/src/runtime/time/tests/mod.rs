@@ -220,7 +220,11 @@ fn poll_process_levels() {
     }
 
     for t in 1..normal_or_miri(1024, 64) {
-        handle.inner.driver().time().process_at_time(t as u64);
+        handle
+            .inner
+            .driver()
+            .time()
+            .process_at_time(*crate::runtime::time::source::START_TICK + t as u64);
 
         for (deadline, future) in entries.iter_mut().enumerate() {
             let mut context = Context::from_waker(noop_waker_ref());
@@ -248,10 +252,10 @@ fn poll_process_levels_targeted() {
 
     let handle = handle.inner.driver().time();
 
-    handle.process_at_time(62);
+    handle.process_at_time(*crate::runtime::time::source::START_TICK + 62);
     assert!(e1.as_mut().poll_elapsed(&mut context).is_pending());
-    handle.process_at_time(192);
-    handle.process_at_time(192);
+    handle.process_at_time(*crate::runtime::time::source::START_TICK + 192);
+    handle.process_at_time(*crate::runtime::time::source::START_TICK + 192);
 }
 
 #[test]
@@ -266,4 +270,22 @@ fn instant_to_tick_max() {
     let long_future = start_time + std::time::Duration::from_millis(MAX_SAFE_MILLIS_DURATION + 1);
 
     assert!(handle.time_source.instant_to_tick(long_future) <= MAX_SAFE_MILLIS_DURATION);
+}
+
+#[test]
+#[cfg(not(loom))]
+fn start_tick_offset_shifts_the_tick_axis() {
+    use crate::runtime::time::source::START_TICK;
+
+    let rt = rt(true);
+    let handle = rt.handle().inner.driver().time();
+    let start_time = handle.time_source.start_time();
+
+    assert_eq!(handle.time_source.instant_to_tick(start_time), *START_TICK);
+    assert_eq!(
+        handle
+            .time_source
+            .instant_to_tick(start_time + std::time::Duration::from_millis(5)),
+        *START_TICK + 5
+    );
 }
